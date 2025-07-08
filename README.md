@@ -74,26 +74,33 @@ graph LR
 The project is divided into three core components that run independently:
 
 ``` mermaid
-sequenceDiagram
-    participant F as Next.js Frontend
-    participant B as FastAPI Backend
-    participant A as Python Agent
+   graph LR
+          subgraph "Phase 1: Topic Selection & Research"
+              direction LR
+              A[Start] --> B(TrendSpotterAgent) --> C(PotentialAssessorAgent) --> D(TopicAnalysisAgent)
+          end
 
-    Note over A: Agent runs on a schedule or manually
-    A->>B: 1. Fetches news topics (if needed)
-    A->>A: 2. Generates satirical article draft
-    A->>B: 3. POST /api/articles (sends draft for review)
-    Note over B: Article saved with 'draft' status
+          subgraph "Phase 2: Creative Development"
+              direction LR
+              E(AngleBrainstormerAgent) --> F(HeadlineWriterAgent) --> G(ArticleWriterAgent)
+          end
 
-    Note over F,B: Later, in the Admin Panel...
-    F->>B: 4. GET /api/articles?status=draft
-    B-->>F: Returns draft articles
-    Note over F: Admin reviews and approves article
-    F->>B: 5. PUT /api/articles/{id} (sets status to 'published')
+          subgraph "Phase 3: Critique & Revision"
+              direction LR
+              H{Revision Loop} --> I(HumorCritic) & J(StyleCritic)
+              I & J --> K[Synthesize Feedback] --> L{Approved?}
+          end
+          
+          subgraph "Phase 4: Final Polish & Publication"
+              direction LR
+              M(FinalEditorAgent) --> N[Submit to Backend] --> O[End]
+          end
 
-    Note over F,B: On the public website...
-    F->>B: 6. GET /api/articles?status=published
-    B-->>F: Returns published articles
+          %% Connections Between Phases
+          D --> E
+          G --> H
+          L -- No, Revise --> G
+          L -- Yes, Approved --> M
 ```
 
 ## Setup and Installation
