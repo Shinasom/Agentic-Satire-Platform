@@ -169,16 +169,22 @@ class StyleCriticAgent(GroqAgent):
     def run(self, headline, article):
         print("👔 Style Critic Agent: Reviewing for tone and structure...")
         prompt = f'''
-        You are a stern copy editor for a major newspaper. Your only job is to assess the article's style.
+        You are an editor for a top-tier satirical publication. Your job is to ensure the article maintains a professional, "deadpan" journalistic tone, even when describing ridiculous events. The style should be serious, but the content can be absurd.
+
         Headline: "{headline}"
         Article: "{article}"
 
-        Focus ONLY on the journalistic style. Does it maintain a serious, deadpan tone throughout? Does it follow the proper structure (dateline, quotes, etc.)?
-        Provide one sentence of actionable feedback to improve its adherence to a serious journalistic style.
-        Do NOT comment on the humor or jokes.
-        If the style is perfect and needs no improvement, respond ONLY with the word "Approved".
+        Critique the article based ONLY on its style and tone.
+        - Does it sound like a real, serious news report?
+        - Is the language formal and objective, like a journalist would use?
+        - Does it avoid breaking character by winking at the reader or becoming too silly in its phrasing?
+
+        Provide one sentence of actionable feedback to improve the deadpan delivery.
+        **Do NOT critique the absurdity of the events, quotes, or statistics themselves.** Your focus is on the *presentation*.
+        If the style is perfect, respond ONLY with the word "Approved".
         '''
         return super().run(prompt, temperature=0.5, max_tokens=200)
+    
 
 class FinalEditorAgent(GroqAgent):
     """
