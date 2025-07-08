@@ -28,52 +28,6 @@ This project uses a sophisticated multi-agent system to mimic a real-world edito
 -   **Responsible AI**: An automated disclaimer is appended to every article, clearly marking it as a work of satire.
 
 ```mermaid
-graph LR
-    subgraph "Phase 1: Idea & Angle Generation"
-        A[TrendSpotterAgent: <br>Find Real News Topic] --> B[TopicAnalysisAgent: <br>Summarize Core Story];
-        B --> C[AngleBrainstormerAgent: <br>Brainstorm 3 Satirical Angles];
-        C --> D{Coordinator: <br>Select Random Angle};
-    end
-
-    subgraph "Phase 2: Content Creation & Revision"
-        D --> E[HeadlineWriterAgent: <br>Write Headline];
-        E --> F[ArticleWriterAgent: <br>Write First Draft];
-        F --> G{Revision Loop};
-        G -- "Review Draft" --> H[HumorCriticAgent];
-        G -- "Review Draft" --> I[StyleCriticAgent];
-        H -- "Humor Feedback" --> J[Coordinator: <br>Synthesize Feedback];
-        I -- "Style Feedback" --> J;
-        J --> K{Both Critics Approved?};
-        K -- "No, Revisions Needed" --> F;
-    end
-
-    subgraph "Phase 3: Final Polish & Publication"
-        K -- "Yes, Approved" --> L[FinalEditorAgent: <br>Proofread, Clean & Categorize];
-        L --> M[Format JSON: <br>cleaned_article, category];
-        M --> N[Submit to Backend API];
-        N --> O[End];
-    end
-
-    style A fill:#cde4f9,stroke:#5078a3,stroke-width:2px
-    style O fill:#d4edda,stroke:#155724,stroke-width:2px
-    style K fill:#fff3cd,stroke:#856404,stroke-width:2px,stroke-dasharray: 5 5
-
-```
-
-
-## Tech Stack
-
-| Frontend           | Backend            | AI & Agent Orchestration      |
-| ------------------ | ------------------ | ----------------------------- |
-| Next.js            | Python 3           | Groq API (Llama 3)            |
-| React              | FastAPI            | NewsAPI                       |
-| Tailwind CSS       | Uvicorn            | Python Classes |
-
-## System Architecture
-
-The project is divided into three core components that run independently:
-
-``` mermaid
    graph LR
           subgraph "Phase 1: Topic Selection & Research"
               direction LR
@@ -101,6 +55,43 @@ The project is divided into three core components that run independently:
           G --> H
           L -- No, Revise --> G
           L -- Yes, Approved --> M
+
+```
+
+
+## Tech Stack
+
+| Frontend           | Backend            | AI & Agent Orchestration      |
+| ------------------ | ------------------ | ----------------------------- |
+| Next.js            | Python 3           | Groq API (Llama 3)            |
+| React              | FastAPI            | NewsAPI                       |
+| Tailwind CSS       | Uvicorn            | Python Classes |
+
+## System Architecture
+
+The project is divided into three core components that run independently:
+
+``` 
+sequenceDiagram
+    participant F as Next.js Frontend
+    participant B as FastAPI Backend
+    participant A as Python Agent
+
+    Note over A: Agent runs on a schedule or manually
+    A->>B: 1. Fetches news topics (if needed)
+    A->>A: 2. Generates satirical article draft
+    A->>B: 3. POST /api/articles (sends draft for review)
+    Note over B: Article saved with 'draft' status
+
+    Note over F,B: Later, in the Admin Panel...
+    F->>B: 4. GET /api/articles?status=draft
+    B-->>F: Returns draft articles
+    Note over F: Admin reviews and approves article
+    F->>B: 5. PUT /api/articles/{id} (sets status to 'published')
+
+    Note over F,B: On the public website...
+    F->>B: 6. GET /api/articles?status=published
+    B-->>F: Returns published articles
 ```
 
 ## Setup and Installation
