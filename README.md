@@ -1,6 +1,7 @@
 # The Absurd Chronicle: An Agentic News Platform
 
-![Project Screenshot](httpsg?w=500&h=250) 
+![Project Screenshot](https://github.com/Shinasom/Agentic-Satire-Platform/blob/c2d8e2e16a9b55f035e6176ffe3555b5df302466/Screenshot%202025-07-09%20020320.png?raw=true)
+
 
 > A full-stack platform featuring an autonomous AI newsroom that generates, critiques, and publishes satirical content based on real-world events.
 
@@ -28,35 +29,33 @@ This project uses a sophisticated multi-agent system to mimic a real-world edito
 -   **Responsible AI**: An automated disclaimer is appended to every article, clearly marking it as a work of satire.
 
 ```mermaid
-graph LR
-    subgraph "Phase 1: Idea & Angle Generation"
-        A[TrendSpotterAgent: <br>Find Real News Topic] --> B[TopicAnalysisAgent: <br>Summarize Core Story];
-        B --> C[AngleBrainstormerAgent: <br>Brainstorm 3 Satirical Angles];
-        C --> D{Coordinator: <br>Select Random Angle};
-    end
+   graph LR
+          subgraph "Phase 1: Topic Selection & Research"
+              direction LR
+              A[Start] --> B(TrendSpotterAgent) --> C(PotentialAssessorAgent) --> D(TopicAnalysisAgent)
+          end
 
-    subgraph "Phase 2: Content Creation & Revision"
-        D --> E[HeadlineWriterAgent: <br>Write Headline];
-        E --> F[ArticleWriterAgent: <br>Write First Draft];
-        F --> G{Revision Loop};
-        G -- "Review Draft" --> H[HumorCriticAgent];
-        G -- "Review Draft" --> I[StyleCriticAgent];
-        H -- "Humor Feedback" --> J[Coordinator: <br>Synthesize Feedback];
-        I -- "Style Feedback" --> J;
-        J --> K{Both Critics Approved?};
-        K -- "No, Revisions Needed" --> F;
-    end
+          subgraph "Phase 2: Creative Development"
+              direction LR
+              E(AngleBrainstormerAgent) --> F(HeadlineWriterAgent) --> G(ArticleWriterAgent)
+          end
 
-    subgraph "Phase 3: Final Polish & Publication"
-        K -- "Yes, Approved" --> L[FinalEditorAgent: <br>Proofread, Clean & Categorize];
-        L --> M[Format JSON: <br>cleaned_article, category];
-        M --> N[Submit to Backend API];
-        N --> O[End];
-    end
+          subgraph "Phase 3: Critique & Revision"
+              direction LR
+              H{Revision Loop} --> I(HumorCritic) & J(StyleCritic)
+              I & J --> K[Synthesize Feedback] --> L{Approved?}
+          end
+          
+          subgraph "Phase 4: Final Polish & Publication"
+              direction LR
+              M(FinalEditorAgent) --> N[Submit to Backend] --> O[End]
+          end
 
-    style A fill:#cde4f9,stroke:#5078a3,stroke-width:2px
-    style O fill:#d4edda,stroke:#155724,stroke-width:2px
-    style K fill:#fff3cd,stroke:#856404,stroke-width:2px,stroke-dasharray: 5 5
+          %% Connections Between Phases
+          D --> E
+          G --> H
+          L -- No, Revise --> G
+          L -- Yes, Approved --> M
 
 ```
 
@@ -73,7 +72,7 @@ graph LR
 
 The project is divided into three core components that run independently:
 
-``` mermaid
+```mermaid
 sequenceDiagram
     participant F as Next.js Frontend
     participant B as FastAPI Backend
