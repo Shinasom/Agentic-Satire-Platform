@@ -1,6 +1,7 @@
 # The Absurd Chronicle: An Agentic News Platform
 
-![Project Screenshot](httpsg?w=500&h=250) 
+![Project Screenshot](https://github.com/Shinasom/Agentic-Satire-Platform/blob/c2d8e2e16a9b55f035e6176ffe3555b5df302466/Screenshot%202025-07-09%20020320.png?raw=true)
+
 
 > A full-stack platform featuring an autonomous AI newsroom that generates, critiques, and publishes satirical content based on real-world events.
 
@@ -71,7 +72,7 @@ This project uses a sophisticated multi-agent system to mimic a real-world edito
 
 The project is divided into three core components that run independently:
 
-``` 
+```mermaid
 sequenceDiagram
     participant F as Next.js Frontend
     participant B as FastAPI Backend
