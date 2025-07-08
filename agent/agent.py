@@ -43,8 +43,7 @@ class GroqAgent:
 
 class TrendSpotterAgent:
     """
-    Fetches trending news, including real content snippets, by randomly choosing
-    between GNews (India) and NewsAPI (US).
+    Fetches trending news from all available sources and returns a combined list.
     """
     def __init__(self, gnews_key, newsapi_key):
         self.gnews_key = gnews_key
@@ -56,45 +55,137 @@ class TrendSpotterAgent:
             self.sources.append(self._fetch_from_newsapi)
         if not self.sources:
             raise ValueError("At least one news API key is required.")
-
+            
+    # _fetch_from_gnews and _fetch_from_newsapi methods remain the same...
     def _fetch_from_gnews(self):
+        # ... (no changes needed in this private method)
         print("🕵️ Trend-Spotter Agent: Fetching trends and content from GNews (India)...")
         try:
             url = f"https://gnews.io/api/v4/top-headlines?country=in&lang=en&token={self.gnews_key}"
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             data = response.json()
+            valid_articles = []
             if "articles" in data:
-                return [{"title": a["title"], "content": a["content"]} for a in data.get("articles", [])[:10]]
+                for article in data["articles"]:
+                    title = article.get("title")
+                    content = article.get("content")
+                    if title and content and len(title.split()) > 3:
+                        valid_articles.append({"title": title, "content": content})
+            return valid_articles[:10] if valid_articles else []
         except Exception as e:
             print(f"GNews API Error: {e}")
-        return None
+        return []
 
     def _fetch_from_newsapi(self):
+        # ... (no changes needed in this private method)
         print("🕵️ Trend-Spotter Agent: Fetching trends and content from NewsAPI (US)...")
         try:
             url = f"https://newsapi.org/v2/top-headlines?country=us&apiKey={self.newsapi_key}"
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             data = response.json()
+            valid_articles = []
             if data.get("status") == "ok" and data.get("articles"):
-                return [{"title": a["title"], "content": (a.get("content") or a.get("description"))} for a in data.get("articles", [])[:10] if a["title"] != "[Removed]"]
+                for article in data["articles"]:
+                    title = article.get("title")
+                    content = article.get("content") or article.get("description")
+                    if title and content and title != "[Removed]" and len(title.split()) > 3:
+                        valid_articles.append({"title": title, "content": content})
+            return valid_articles[:10] if valid_articles else []
         except Exception as e:
             print(f"NewsAPI (US) Error: {e}")
-        return None
+        return []
 
     def run(self):
-        chosen_source = random.choice(self.sources)
-        articles = chosen_source()
+        all_articles = []
+        for source_func in self.sources:
+            # Add a delay between API calls to be safe
+            time.sleep(1) 
+            articles = source_func()
+            if articles:
+                all_articles.extend(articles)
         
-        if articles:
-            return articles
+        if all_articles:
+            return all_articles
         
         print("⚠️ Trend-Spotter Agent: Using fallback trends.")
         return [
             {"title": "Cricket match results announced", "content": "The national cricket team has won a decisive victory in their latest match, with the captain scoring a century. Fans are celebrating the win across the country."},
             {"title": "New smartphone released", "content": "A major tech company has released its latest flagship smartphone, featuring a slightly improved camera and a new color option. Analysts predict it will sell millions of units despite its high price point."},
         ]
+
+
+# --- History Management ---
+# This remains a global constant for the file path
+HISTORY_FILE = "used_articles.json"
+
+class PotentialAssessorAgent(GroqAgent):
+    """
+    An autonomous agent that intelligently selects a new headline,
+    handling its own history checking and de-duplication recursively.
+    """
+    def _load_history(self):
+        """Loads the history of used article titles."""
+        if not os.path.exists(HISTORY_FILE):
+            return []
+        try:
+            with open(HISTORY_FILE, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return []
+
+    def _get_llm_choice(self, headlines):
+        """Gets a single choice from the LLM for a given list of headlines."""
+        if not headlines:
+            return None
+            
+        print(f"🧐 Potential-Assessor Agent: Evaluating {len(headlines)} headlines...")
+        formatted_headlines = "\n".join(f"{i+1}. {headline}" for i, headline in enumerate(headlines))
+        
+        prompt = f'''
+        You are the head writer for a satirical news show. Your job is to pick the most promising story to develop from the following list.
+
+        [HEADLINES]
+        {formatted_headlines}
+
+        [INSTRUCTION]
+        Respond with ONLY the number of the headline you choose. For example: 3
+        '''
+        return super().run(prompt, temperature=0.1, max_tokens=10)
+
+    def run(self, all_articles):
+        """
+        Main execution method. Recursively selects a new, unused article.
+        """
+        used_headlines = self._load_history()
+        
+        # Filter out any articles whose titles are already in the history
+        available_articles = [article for article in all_articles if article['title'] not in used_headlines]
+
+        if not available_articles:
+            print("--- 🛑 Potential-Assessor: No new, unused articles available to choose from.")
+            return None # Return None if no new options are left
+
+        # Get a choice from the LLM based on the available options
+        available_titles = [article['title'] for article in available_articles]
+        choice_str = self._get_llm_choice(available_titles)
+
+        try:
+            # Get the chosen article from the available list
+            selected_index = int(choice_str.strip()) - 1
+            if 0 <= selected_index < len(available_articles):
+                chosen_article = available_articles[selected_index]
+                print(f"Coordinator: Assessor selected -> \"{chosen_article['title']}\"")
+                # Return the complete chosen article dictionary
+                return chosen_article
+            else:
+                print("⚠️ Assessor returned an invalid index. Choosing a new one randomly.")
+                return random.choice(available_articles)
+        except (ValueError, TypeError):
+            print("⚠️ Assessor returned a non-numeric response. Choosing a new one randomly.")
+            return random.choice(available_articles)
+    
 
 # RE-INTRODUCED: The TopicAnalysisAgent now acts as a summarizer for real content.
 class TopicAnalysisAgent(GroqAgent):
@@ -244,12 +335,31 @@ class FinalEditorAgent(GroqAgent):
         '''
         return super().run(prompt, temperature=0.1, max_tokens=2048, is_json=True)
 
+
+
+def save_used_article(headline):
+    """Saves a new, successfully used headline to the history file."""
+    history = []
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, 'r') as f:
+                history = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            history = []
+            
+    if headline not in history:
+        history.append(headline)
+        with open(HISTORY_FILE, 'w') as f:
+            json.dump(history, f, indent=4)
+
+
 # --- The Orchestrator ---
 
 class Coordinator:
-    """Manages the entire multi-agent workflow."""
+    """Manages the entire multi-agent workflow, relying on an autonomous assessor."""
     def __init__(self):
         self.trend_spotter = TrendSpotterAgent(gnews_key=GNEWS_API_KEY, newsapi_key=NEWS_API_KEY)
+        self.potential_assessor = PotentialAssessorAgent()
         self.topic_analyzer = TopicAnalysisAgent()
         self.angle_brainstormer = AngleBrainstormerAgent()
         self.headline_writer = HeadlineWriterAgent()
@@ -259,46 +369,66 @@ class Coordinator:
         self.final_editor = FinalEditorAgent()
 
     def run(self, max_revisions=2):
-        print("\n--- 🎬 Coordinator: Starting Workflow with Content Summarizer ---\n")
+        print("\n--- 🎬 Coordinator: Starting Autonomous Assessor Workflow ---\n")
 
-        # ... (Steps 1-4 remain the same) ...
-        trends = self.trend_spotter.run()
-        if not trends: return None, None, None
-        selected_trend = random.choice(trends)
+        # Step 1: Get all possible trends from all sources
+        all_trends = self.trend_spotter.run()
+        if not all_trends: return None, None, None
+        time.sleep(2)  # Add delay
+
+        # Step 2: Let the autonomous assessor handle selection and de-duplication
+        # The Coordinator's logic is now much simpler.
+        selected_trend = self.potential_assessor.run(all_trends)
+        time.sleep(2) # Add delay
+        
+        if not selected_trend:
+            print("--- 🛑 Coordinator: Assessor could not provide a suitable trend. Aborting. ---")
+            return None, None, None
+            
         trend_title = selected_trend['title']
         trend_content = selected_trend['content']
-        print(f'Coordinator: Selected trend -> "{trend_title}"\n')
+        print(f'Coordinator: Proceeding with trend -> "{trend_title}"\n')
         
+        # Step 3: Summarize the real content to get a clean context
         context_source = trend_content if trend_content else trend_title
         clean_summary = self.topic_analyzer.run(context_source)
         if not clean_summary:
+            print("Coordinator: Summarizer failed, falling back to raw content/title.")
             clean_summary = context_source
         print(f'Coordinator: Using clean summary as context -> "{clean_summary}"\n')
+        time.sleep(2)
 
+        # Step 4: Brainstorm Angles
         angles_text = self.angle_brainstormer.run(clean_summary)
         if not angles_text: return None, None, None
         angles = [line.split('.', 1)[-1].strip() for line in angles_text.split('\n') if '.' in line]
         if not angles: return None, None, None
         angle = random.choice(angles)
         print(f'Coordinator: Chosen angle -> "{angle}"\n')
+        time.sleep(2)
 
+        # Step 5: Write Headline
         headline = self.headline_writer.run(angle)
         if not headline: return None, None, None
         print(f'Coordinator: Generated headline -> "{headline}"\n')
+        time.sleep(2)
 
+        # Step 6: Write First Draft
         article = self.article_writer.run(headline, angle=angle, context=clean_summary)
         if not article: return None, None, None
+        time.sleep(2)
 
-        # Step 6: Multi-Critic Revision Loop
+        # Step 7: Multi-Critic Revision Loop
         for i in range(max_revisions):
             print(f"--- Conducting critique round {i+1}/{max_revisions} ---")
             humor_feedback = self.humor_critic.run(headline, article)
+            time.sleep(2)
             style_feedback = self.style_critic.run(headline, article)
+            time.sleep(2)
             print(f'Coordinator: Humor Critic says -> "{humor_feedback}"')
             print(f'Coordinator: Style Critic says -> "{style_feedback}"\n')
 
             humor_approved = "Approved" in humor_feedback if humor_feedback else False
-            # If the critic fails, its feedback won't be "Approved"
             style_approved = "Approved" in style_feedback if style_feedback else False
 
             if humor_approved and style_approved:
@@ -315,11 +445,11 @@ class Coordinator:
             
             revision_prompt = " ".join(combined_feedback)
             print(f"Coordinator: Revision {i+1}/{max_revisions}. Sending back to writer.")
-            # CHANGED: Added the missing 'angle' argument to the revision call.
             article = self.article_writer.run(headline, angle=angle, context=clean_summary, feedback=revision_prompt)
             if not article: return None, None, None
-
-        # ... (Step 7 remains the same) ...
+            time.sleep(2)
+        
+        # Step 8: Final Polish and Categorization
         editor_json_response = self.final_editor.run(headline, article)
         if not editor_json_response:
             print("--- 🛑 Coordinator: Final Editor failed. Aborting workflow. ---")
@@ -335,12 +465,17 @@ class Coordinator:
                  print("--- 🛑 Coordinator: Final Editor returned no article or headline. Aborting. ---")
                  return None, None, None
 
+            # On success, the Coordinator triggers the save.
+            save_used_article(trend_title)
+            print(f"Coordinator: Successfully saved '{trend_title}' to history.")
+            
             print(f"Coordinator: Final publishable article generated and categorized as '{final_category}'.")
             return final_headline, final_article, final_category
 
         except json.JSONDecodeError:
             print(f"--- 🛑 Coordinator: Failed to decode JSON from Final Editor. Response was: {editor_json_response} ---")
             return None, None, None
+        
 
 def submit_article_to_backend(headline, content, category):
     """Submits the final article to the backend with a disclaimer."""

@@ -96,3 +96,23 @@ def get_article_by_id(article_id: str):
         if article["id"] == article_id:
             return article
     raise HTTPException(status_code=404, detail="Article not found")
+
+@app.delete("/api/articles/{article_id}", status_code=200)
+def delete_article(article_id: str):
+    """Deletes an article by its unique ID."""
+    db = read_db()
+    
+    # Find the article to remove
+    article_to_remove = None
+    for article in db["articles"]:
+        if article["id"] == article_id:
+            article_to_remove = article
+            break
+            
+    if not article_to_remove:
+        raise HTTPException(status_code=404, detail="Article not found")
+        
+    db["articles"].remove(article_to_remove)
+    write_db(db)
+    
+    return {"message": "Article deleted successfully"}
