@@ -10,7 +10,7 @@ load_dotenv()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GNEWS_API_KEY = os.getenv("GNEWS_API_KEY")
-NEWS_API_KEY = os.getenv("NEWS_API_KEY") # For US News
+NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 MODEL_NAME = "llama3-70b-8192"
 BACKEND_API_URL = "http://127.0.0.1:8000/api/articles"
 
@@ -43,8 +43,8 @@ class GroqAgent:
 
 class TrendSpotterAgent:
     """
-    Fetches trending news topics by randomly choosing between
-    GNews (India) and NewsAPI (US).
+    Fetches trending news, including real content snippets, by randomly choosing
+    between GNews (India) and NewsAPI (US).
     """
     def __init__(self, gnews_key, newsapi_key):
         self.gnews_key = gnews_key
@@ -58,27 +58,27 @@ class TrendSpotterAgent:
             raise ValueError("At least one news API key is required.")
 
     def _fetch_from_gnews(self):
-        print("🕵️ Trend-Spotter Agent: Fetching trends from GNews (India)...")
+        print("🕵️ Trend-Spotter Agent: Fetching trends and content from GNews (India)...")
         try:
             url = f"https://gnews.io/api/v4/top-headlines?country=in&lang=en&token={self.gnews_key}"
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             data = response.json()
             if "articles" in data:
-                return [a["title"] for a in data.get("articles", [])[:10]]
+                return [{"title": a["title"], "content": a["content"]} for a in data.get("articles", [])[:10]]
         except Exception as e:
             print(f"GNews API Error: {e}")
         return None
 
     def _fetch_from_newsapi(self):
-        print("🕵️ Trend-Spotter Agent: Fetching trends from NewsAPI (US)...")
+        print("🕵️ Trend-Spotter Agent: Fetching trends and content from NewsAPI (US)...")
         try:
             url = f"https://newsapi.org/v2/top-headlines?country=us&apiKey={self.newsapi_key}"
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             data = response.json()
             if data.get("status") == "ok" and data.get("articles"):
-                return [a["title"] for a in data.get("articles", [])[:10] if a["title"] != "[Removed]"]
+                return [{"title": a["title"], "content": (a.get("content") or a.get("description"))} for a in data.get("articles", [])[:10] if a["title"] != "[Removed]"]
         except Exception as e:
             print(f"NewsAPI (US) Error: {e}")
         return None
@@ -91,27 +91,32 @@ class TrendSpotterAgent:
             return articles
         
         print("⚠️ Trend-Spotter Agent: Using fallback trends.")
-        return ["Cricket match results announced", "New smartphone released", "Government announces new policy"]
+        return [
+            {"title": "Cricket match results announced", "content": "The national cricket team has won a decisive victory in their latest match, with the captain scoring a century. Fans are celebrating the win across the country."},
+            {"title": "New smartphone released", "content": "A major tech company has released its latest flagship smartphone, featuring a slightly improved camera and a new color option. Analysts predict it will sell millions of units despite its high price point."},
+        ]
 
-
+# RE-INTRODUCED: The TopicAnalysisAgent now acts as a summarizer for real content.
 class TopicAnalysisAgent(GroqAgent):
-    """Summarizes the core story behind a news headline for deeper context."""
-    def run(self, trend):
-        print("📊 Topic-Analysis Agent: Analyzing the core story...")
+    """Summarizes a raw news snippet into a clean, concise context."""
+    def run(self, story_content):
+        print("📊 Topic-Analysis Agent: Summarizing real news content...")
         prompt = f'''
-        You are a news analyst. The following is a news headline: "{trend}"
-        Your task is to provide a very brief, 2-sentence summary of the likely real story behind this headline.
-        This summary will be used to generate satire, so focus on the key elements.
+        You are a news analyst. Read the following news article snippet and summarize its core story in two concise sentences.
+        This summary will be used to generate satire, so focus on the key, most important elements.
+
+        Article Snippet to Summarize: "{story_content}"
         '''
         return super().run(prompt, temperature=0.4, max_tokens=300)
 
 class AngleBrainstormerAgent(GroqAgent):
-    """Brainstorms multiple satirical angles for a given topic."""
-    def run(self, trend):
-        print("🧠 Angle-Brainstormer Agent: Developing satirical angles...")
+    """Brainstorms multiple satirical angles from a clean news summary."""
+    def run(self, summary):
+        print("🧠 Angle-Brainstormer Agent: Developing satirical angles from summary...")
         prompt = f'''
-        A real news topic is: "{trend}"
-        Brainstorm 3 distinct and funny satirical angles for this topic in the style of 'The Onion' or 'Faking News'.
+        The following is a clean summary of a real news story: "{summary}"
+        
+        Brainstorm 3 distinct and funny satirical angles for this story in the style of 'The Onion' or 'Faking News'.
         Present them as a numbered list. For example:
         1. [Angle 1]
         2. [Angle 2]
@@ -128,23 +133,44 @@ class HeadlineWriterAgent(GroqAgent):
 
 class ArticleWriterAgent(GroqAgent):
     """Writes or revises the satirical article."""
-    def run(self, headline, feedback=None):
+    def run(self, headline, angle, context, feedback=None):
         if feedback:
             print("🔄 Article-Writer Agent: Revising article based on multi-critic feedback...")
-            prompt = f'Revise the satirical article for the headline: "{headline}". You have received feedback from multiple critics. Rewrite the entire article, incorporating the following crucial points to make it better: "{feedback}".'
+            # CHANGED: Added the full structural requirements to the revision prompt.
+            prompt = f'''
+            You are revising a satirical article. Rewrite the entire article based on the provided feedback.
+
+            **Headline:** "{headline}"
+            **Creative Angle (Your primary guide):** "{angle}"
+            **Grounding Context (For details):** "{context}"
+            **Feedback to Incorporate:** "{feedback}"
+
+            While incorporating the feedback, you MUST adhere to the original angle and context, and you MUST follow this structure precisely:
+            1. Dateline: An appropriate location for the context.
+            2. Opening Paragraph: Cover the 5 Ws (Who, What, When, Where, Why) for the satirical story.
+            3. Expert Quotes: Include quotes from at least 3 fake experts that support the angle.
+            4. Statistics: Include one realistic-sounding but fake statistic.
+            5. Tone: Maintain a serious, deadpan journalistic tone.
+            6. Conclusion: End with a paragraph that adds a final satirical twist.
+            '''
         else:
             print("📝 Article-Writer Agent: Writing high-quality first draft...")
-            # CHANGED: Made dateline and expert names more general.
             prompt = f'''
-            Write a professional 400-word satirical news article with this headline: "{headline}"
+            Write a professional 400-word satirical news article.
+
+            **Headline:** "{headline}"
             
-            Follow this structure precisely:
-            1. Dateline: Start with a plausible location dateline (e.g., MUMBAI - or WASHINGTON D.C. -).
-            2. Opening Paragraph: Cover the 5 Ws (Who, What, When, Where, Why) in a satirical way.
-            3. Expert Quotes: Include quotes from at least 3 fake experts with plausible but funny-sounding names and titles.
-            4. Statistics: Include one realistic-sounding but fake statistic relevant to the story.
-            5. Tone: Maintain a serious, deadpan journalistic tone throughout.
-            6. Conclusion: End with a serious-sounding concluding paragraph that adds a final satirical twist.
+            **Creative Angle (Your primary guide):** "{angle}"
+
+            **Grounding Context (For details like location/names):** "{context}"
+            
+            You must write an article that perfectly executes the provided Creative Angle. Use the Grounding Context to inform the specific details, making the story feel real. Follow this structure precisely:
+            1. Dateline: An appropriate location for the context.
+            2. Opening Paragraph: Cover the 5 Ws (Who, What, When, Where, Why) for the satirical story.
+            3. Expert Quotes: Include quotes from at least 3 fake experts that support the angle.
+            4. Statistics: Include one realistic-sounding but fake statistic.
+            5. Tone: Maintain a serious, deadpan journalistic tone.
+            6. Conclusion: End with a paragraph that adds a final satirical twist.
             '''
         return super().run(prompt, temperature=0.8, max_tokens=1024)
 
@@ -168,60 +194,61 @@ class StyleCriticAgent(GroqAgent):
     """A critic that focuses ONLY on the journalistic style and tone."""
     def run(self, headline, article):
         print("👔 Style Critic Agent: Reviewing for tone and structure...")
+        # CHANGED: Using a highly structured, forceful prompt to ensure compliance.
         prompt = f'''
-        You are an editor for a top-tier satirical publication. Your job is to ensure the article maintains a professional, "deadpan" journalistic tone, even when describing ridiculous events. The style should be serious, but the content can be absurd.
+        [SYSTEM INSTRUCTION]
+        You are a style evaluation system for a satirical newspaper. Your function is to analyze the provided text against a set of rules and provide a single-line response.
 
+        [RULES]
+        1. Your ENTIRE output must be ONE of two things: the single word "Approved" OR a single sentence of actionable feedback.
+        2. The feedback must ONLY address how to make the article's TONE more serious, professional, and "deadpan," like a real news report.
+        3. DO NOT critique the humor, the absurdity of the events, or the content itself. Focus ONLY on the writing style.
+        4. DO NOT use conversational language. Do not ask for the article. Do not greet. Execute the task based on the input below.
+
+        [INPUT TEXT]
         Headline: "{headline}"
         Article: "{article}"
 
-        Critique the article based ONLY on its style and tone.
-        - Does it sound like a real, serious news report?
-        - Is the language formal and objective, like a journalist would use?
-        - Does it avoid breaking character by winking at the reader or becoming too silly in its phrasing?
-
-        Provide one sentence of actionable feedback to improve the deadpan delivery.
-        **Do NOT critique the absurdity of the events, quotes, or statistics themselves.** Your focus is on the *presentation*.
-        If the style is perfect, respond ONLY with the word "Approved".
+        [YOUR RESPONSE]
         '''
         return super().run(prompt, temperature=0.5, max_tokens=200)
-    
 
 class FinalEditorAgent(GroqAgent):
     """
-    Acts as the final gate. It proofreads the article to remove all
-    conversational filler and AI artifacts, then categorizes the clean text.
+    Acts as the final gate. It cleans the headline and article, removes all
+    AI artifacts, then categorizes the clean text.
     """
     def run(self, headline, article):
         print("✅ Final Editor Agent: Performing final clean, proofread, and categorization...")
-        # CHANGED: Made categories more general to fit both US and Indian news.
         prompt = f'''
         You are a stern, no-nonsense final copy editor for a satirical newspaper.
-        Your only goal is to prepare the following article for publication.
+        Your only goal is to prepare the following for publication.
 
-        Article Headline: "{headline}"
-        Article Draft: "{article}"
+        Draft Headline: "{headline}"
+        Draft Article: "{article}"
 
-        Perform two tasks:
+        Perform THREE tasks:
 
-        TASK 1: RUTHLESSLY CLEAN THE ARTICLE.
+        TASK 1: RUTHLESSLY CLEAN THE HEADLINE.
+        The draft headline may contain extra conversational text or explanations. Extract ONLY the core satirical headline itself. The result should be a short, single-line headline.
+
+        TASK 2: RUTHLESSLY CLEAN THE ARTICLE.
         The draft may contain AI-generated artifacts, conversational filler, or meta-commentary. You must remove all of it.
         The final output text for this task MUST be ONLY the publishable article, starting with its dateline and ending with its final sentence.
 
-        TASK 2: CATEGORIZE THE CLEANED ARTICLE.
-        Based on the final, cleaned article text from Task 1, categorize it into ONE of the following options:
+        TASK 3: CATEGORIZE THE CLEANED ARTICLE.
+        Based on the final, cleaned article text from Task 2, categorize it into ONE of the following options:
         Politics, World News, Business, Technology, Sports, Entertainment, Lifestyle, Science
 
-        Return your response as a single, valid JSON object with two keys: "cleaned_article" and "category".
+        Return your response as a single, valid JSON object with three keys: "cleaned_headline", "cleaned_article", and "category".
         '''
         return super().run(prompt, temperature=0.1, max_tokens=2048, is_json=True)
-
 
 # --- The Orchestrator ---
 
 class Coordinator:
     """Manages the entire multi-agent workflow."""
     def __init__(self):
-        # CHANGED: Pass both API keys to the TrendSpotterAgent
         self.trend_spotter = TrendSpotterAgent(gnews_key=GNEWS_API_KEY, newsapi_key=NEWS_API_KEY)
         self.topic_analyzer = TopicAnalysisAgent()
         self.angle_brainstormer = AngleBrainstormerAgent()
@@ -232,20 +259,24 @@ class Coordinator:
         self.final_editor = FinalEditorAgent()
 
     def run(self, max_revisions=2):
-        print("\n--- 🎬 Coordinator: Starting Randomized International News Workflow ---\n")
+        print("\n--- 🎬 Coordinator: Starting Workflow with Content Summarizer ---\n")
 
+        # ... (Steps 1-4 remain the same) ...
         trends = self.trend_spotter.run()
         if not trends: return None, None, None
-        trend = random.choice(trends)
-        print(f'Coordinator: Selected trend -> "{trend}"\n')
+        selected_trend = random.choice(trends)
+        trend_title = selected_trend['title']
+        trend_content = selected_trend['content']
+        print(f'Coordinator: Selected trend -> "{trend_title}"\n')
+        
+        context_source = trend_content if trend_content else trend_title
+        clean_summary = self.topic_analyzer.run(context_source)
+        if not clean_summary:
+            clean_summary = context_source
+        print(f'Coordinator: Using clean summary as context -> "{clean_summary}"\n')
 
-        topic_summary = self.topic_analyzer.run(trend)
-        if not topic_summary: topic_summary = trend
-        print(f'Coordinator: Topic analysis -> "{topic_summary}"\n')
-
-        angles_text = self.angle_brainstormer.run(topic_summary)
+        angles_text = self.angle_brainstormer.run(clean_summary)
         if not angles_text: return None, None, None
-
         angles = [line.split('.', 1)[-1].strip() for line in angles_text.split('\n') if '.' in line]
         if not angles: return None, None, None
         angle = random.choice(angles)
@@ -255,9 +286,10 @@ class Coordinator:
         if not headline: return None, None, None
         print(f'Coordinator: Generated headline -> "{headline}"\n')
 
-        article = self.article_writer.run(headline)
+        article = self.article_writer.run(headline, angle=angle, context=clean_summary)
         if not article: return None, None, None
 
+        # Step 6: Multi-Critic Revision Loop
         for i in range(max_revisions):
             print(f"--- Conducting critique round {i+1}/{max_revisions} ---")
             humor_feedback = self.humor_critic.run(headline, article)
@@ -266,6 +298,7 @@ class Coordinator:
             print(f'Coordinator: Style Critic says -> "{style_feedback}"\n')
 
             humor_approved = "Approved" in humor_feedback if humor_feedback else False
+            # If the critic fails, its feedback won't be "Approved"
             style_approved = "Approved" in style_feedback if style_feedback else False
 
             if humor_approved and style_approved:
@@ -279,12 +312,14 @@ class Coordinator:
             combined_feedback = []
             if not humor_approved: combined_feedback.append(f"Humor Improvement: {humor_feedback}")
             if not style_approved: combined_feedback.append(f"Style Improvement: {style_feedback}")
-
+            
             revision_prompt = " ".join(combined_feedback)
             print(f"Coordinator: Revision {i+1}/{max_revisions}. Sending back to writer.")
-            article = self.article_writer.run(headline, feedback=revision_prompt)
+            # CHANGED: Added the missing 'angle' argument to the revision call.
+            article = self.article_writer.run(headline, angle=angle, context=clean_summary, feedback=revision_prompt)
             if not article: return None, None, None
 
+        # ... (Step 7 remains the same) ...
         editor_json_response = self.final_editor.run(headline, article)
         if not editor_json_response:
             print("--- 🛑 Coordinator: Final Editor failed. Aborting workflow. ---")
@@ -292,15 +327,16 @@ class Coordinator:
 
         try:
             editor_data = json.loads(editor_json_response)
+            final_headline = editor_data.get("cleaned_headline")
             final_article = editor_data.get("cleaned_article")
             final_category = editor_data.get("category", "General")
 
-            if not final_article:
-                 print("--- 🛑 Coordinator: Final Editor returned no article. Aborting. ---")
+            if not final_article or not final_headline:
+                 print("--- 🛑 Coordinator: Final Editor returned no article or headline. Aborting. ---")
                  return None, None, None
 
             print(f"Coordinator: Final publishable article generated and categorized as '{final_category}'.")
-            return headline, final_article, final_category
+            return final_headline, final_article, final_category
 
         except json.JSONDecodeError:
             print(f"--- 🛑 Coordinator: Failed to decode JSON from Final Editor. Response was: {editor_json_response} ---")
