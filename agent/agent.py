@@ -17,9 +17,12 @@ BACKEND_API_URL = "http://127.0.0.1:8000/api/articles"
 # --- Base Agent ---
 class GroqAgent:
     """The base agent for interacting with the Groq API."""
-    def __init__(self, model_name=MODEL_NAME):
+    # CHANGED: The agent now accepts a specific model name on initialization.
+    # We default to the fast model for any agent we don't specify.
+    def __init__(self, model_name="llama-3.1-8b-instant"):
         self.model = model_name
 
+    # The 'run' method remains the same
     def run(self, prompt, temperature=0.8, max_tokens=1024, is_json=False):
         headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
         payload = {
@@ -42,6 +45,7 @@ class GroqAgent:
 # --- Specialized Agents ---
 
 class TrendSpotterAgent:
+    #is used to fetch trending news from multiple sources and return a combined list.
     """
     Fetches trending news from all available sources and returns a combined list.
     """
@@ -58,7 +62,7 @@ class TrendSpotterAgent:
             
     # _fetch_from_gnews and _fetch_from_newsapi methods remain the same...
     def _fetch_from_gnews(self):
-        # ... (no changes needed in this private method)
+        # is used to fetch trending news from GNews API (India).
         print("🕵️ Trend-Spotter Agent: Fetching trends and content from GNews (India)...")
         try:
             url = f"https://gnews.io/api/v4/top-headlines?country=in&lang=en&token={self.gnews_key}"
@@ -78,7 +82,7 @@ class TrendSpotterAgent:
         return []
 
     def _fetch_from_newsapi(self):
-        # ... (no changes needed in this private method)
+        # is used to fetch trending news from NewsAPI (US).
         print("🕵️ Trend-Spotter Agent: Fetching trends and content from NewsAPI (US)...")
         try:
             url = f"https://newsapi.org/v2/top-headlines?country=us&apiKey={self.newsapi_key}"
@@ -97,7 +101,7 @@ class TrendSpotterAgent:
             print(f"NewsAPI (US) Error: {e}")
         return []
 
-    def run(self):
+    def run(self):  
         all_articles = []
         for source_func in self.sources:
             # Add a delay between API calls to be safe
@@ -119,8 +123,9 @@ class TrendSpotterAgent:
 # --- History Management ---
 # This remains a global constant for the file path
 HISTORY_FILE = "used_articles.json"
+#history file is used to track which articles have already been used.
 
-class PotentialAssessorAgent(GroqAgent):
+class PotentialAssessorAgent(GroqAgent): #is used to intelligently select a new headline from the available articles.
     """
     An autonomous agent that intelligently selects a new headline,
     handling its own history checking and de-duplication recursively.
@@ -135,7 +140,7 @@ class PotentialAssessorAgent(GroqAgent):
         except (json.JSONDecodeError, IOError):
             return []
 
-    def _get_llm_choice(self, headlines):
+    def _get_llm_choice(self, headlines): #is used to get a single choice from the LLM for a given list of headlines.
         """Gets a single choice from the LLM for a given list of headlines."""
         if not headlines:
             return None
@@ -187,8 +192,8 @@ class PotentialAssessorAgent(GroqAgent):
             return random.choice(available_articles)
     
 
-# RE-INTRODUCED: The TopicAnalysisAgent now acts as a summarizer for real content.
-class TopicAnalysisAgent(GroqAgent):
+
+class TopicAnalysisAgent(GroqAgent):#is used to summarize a raw news snippet into a clean, concise context. 
     """Summarizes a raw news snippet into a clean, concise context."""
     def run(self, story_content):
         print("📊 Topic-Analysis Agent: Summarizing real news content...")
@@ -200,7 +205,7 @@ class TopicAnalysisAgent(GroqAgent):
         '''
         return super().run(prompt, temperature=0.4, max_tokens=300)
 
-class AngleBrainstormerAgent(GroqAgent):
+class AngleBrainstormerAgent(GroqAgent): #is used to brainstorm multiple satirical angles from a clean news summary.
     """Brainstorms multiple satirical angles from a clean news summary."""
     def run(self, summary):
         print("🧠 Angle-Brainstormer Agent: Developing satirical angles from summary...")
@@ -215,14 +220,15 @@ class AngleBrainstormerAgent(GroqAgent):
         '''
         return super().run(prompt, temperature=0.8, max_tokens=500)
 
-class HeadlineWriterAgent(GroqAgent):
+class HeadlineWriterAgent(GroqAgent): #is used to craft a satirical headline from a specific angle.
     """Crafts a satirical headline from a specific angle."""
     def run(self, angle):
         print("✍️ Headline-Writer Agent: Crafting headline...")
         prompt = f'Create a satirical news headline in the style of The Onion or Faking News based on this specific angle: "{angle}". Make it absurd but plausible, max 12 words.'
         return super().run(prompt, temperature=0.9, max_tokens=100)
 
-class ArticleWriterAgent(GroqAgent):
+class ArticleWriterAgent(GroqAgent):#is used to write or revise the satirical article.
+
     """Writes or revises the satirical article."""
     def run(self, headline, angle, context, feedback=None):
         if feedback:
@@ -356,23 +362,35 @@ def save_used_article(headline):
 # --- The Orchestrator ---
 
 class Coordinator:
-    """Manages the entire multi-agent workflow, relying on an autonomous assessor."""
+    """Manages the entire multi-agent workflow with specific models for each agent."""
     def __init__(self):
+        # Define the models we'll use for clarity
+        REASONING_MODEL = "meta-llama/llama-4-maverick-17b-128e-instruct"
+        FAST_MODEL = "llama-3.1-8b-instant"
+
+        # This agent doesn't use Groq, so no model needed.
         self.trend_spotter = TrendSpotterAgent(gnews_key=GNEWS_API_KEY, newsapi_key=NEWS_API_KEY)
-        self.potential_assessor = PotentialAssessorAgent()
-        self.topic_analyzer = TopicAnalysisAgent()
-        self.angle_brainstormer = AngleBrainstormerAgent()
-        self.headline_writer = HeadlineWriterAgent()
-        self.article_writer = ArticleWriterAgent()
-        self.humor_critic = HumorCriticAgent()
-        self.style_critic = StyleCriticAgent()
-        self.final_editor = FinalEditorAgent()
+        
+        # --- Assign models based on task complexity ---
+
+        # Agents for fast, simple, rule-based tasks use the FAST_MODEL
+        self.topic_analyzer = TopicAnalysisAgent(model_name=FAST_MODEL)
+        self.headline_writer = HeadlineWriterAgent(model_name=FAST_MODEL)
+        self.final_editor = FinalEditorAgent(model_name=FAST_MODEL)
+
+        # Agents for high-quality reasoning and creativity use the REASONING_MODEL
+        self.potential_assessor = PotentialAssessorAgent(model_name=REASONING_MODEL)
+        self.angle_brainstormer = AngleBrainstormerAgent(model_name=REASONING_MODEL)
+        self.article_writer = ArticleWriterAgent(model_name=REASONING_MODEL)
+        self.humor_critic = HumorCriticAgent(model_name=REASONING_MODEL)
+        self.style_critic = StyleCriticAgent(model_name=REASONING_MODEL)
+
 
     def run(self, max_revisions=2):
         print("\n--- 🎬 Coordinator: Starting Autonomous Assessor Workflow ---\n")
 
         # Step 1: Get all possible trends from all sources
-        all_trends = self.trend_spotter.run()
+        all_trends = self.trend_spotter.run() #is used to fetch trending news from multiple sources and return a combined list.
         if not all_trends: return None, None, None
         time.sleep(2)  # Add delay
 
