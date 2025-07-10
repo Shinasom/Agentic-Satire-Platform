@@ -11,7 +11,7 @@ load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GNEWS_API_KEY = os.getenv("GNEWS_API_KEY")
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
-MODEL_NAME = "llama3-70b-8192"
+MODEL_NAME = "llama3-70b-8192" #not using this anymore, but keeping for reference
 BACKEND_API_URL = "http://127.0.0.1:8000/api/articles"
 
 # --- Base Agent ---
@@ -220,6 +220,55 @@ class AngleBrainstormerAgent(GroqAgent): #is used to brainstorm multiple satiric
         '''
         return super().run(prompt, temperature=0.8, max_tokens=500)
 
+class AngleEvaluatorAgent(GroqAgent):
+    """
+    Evaluates a list of satirical angles and selects the one with the highest potential.
+    """
+    def run(self, summary: str, angles: list[str]) -> str | None:
+        print("🧐 Angle-Evaluator Agent: Selecting the best angle...")
+        if not angles:
+            return None
+
+        # Format the angles as a numbered list for the prompt
+        formatted_angles = "\n".join(f"{i+1}. {angle}" for i, angle in enumerate(angles))
+
+        prompt = f'''
+            [SYSTEM INSTRUCTION]
+            You are a function call. You do not explain, you do not converse. Your ONLY output will be a single digit followed by nothing. You will read the context and options and return only the number of the best option. Do not break character.
+
+            [CONTEXT]
+            You are an Executive Producer for a satirical news show.
+            **Real News Summary:** "{summary}"
+            **Angle Options:**
+            {formatted_angles}
+            [/CONTEXT]
+
+            [YOUR TASK]
+            Output the single number corresponding to the best angle based on originality and comedic potential.
+            [/YOUR TASK]
+
+            [RESPONSE FORMAT]
+            A single digit. For example: 2
+            [/RESPONSE FORMAT]
+            '''
+        
+        # Using a reasoning model is crucial here for a quality decision
+        # The parent __init__ should be called with the right model
+        choice_str = super().run(prompt, temperature=0.1, max_tokens=10)
+
+        try:
+            selected_index = int(choice_str.strip()) - 1
+            if 0 <= selected_index < len(angles):
+                chosen_angle = angles[selected_index]
+                print(f"Angle-Evaluator Agent: Selected -> \"{chosen_angle}\"")
+                return chosen_angle
+            else:
+                print("⚠️ Evaluator returned an invalid index. Falling back to the first angle.")
+                return angles[0]
+        except (ValueError, TypeError):
+            print("⚠️ Evaluator returned a non-numeric response. Falling back to the first angle.")
+            return angles[0]
+
 class HeadlineWriterAgent(GroqAgent): #is used to craft a satirical headline from a specific angle.
     """Crafts a satirical headline from a specific angle."""
     def run(self, angle):
@@ -381,6 +430,7 @@ class Coordinator:
         # Agents for high-quality reasoning and creativity use the REASONING_MODEL
         self.potential_assessor = PotentialAssessorAgent(model_name=REASONING_MODEL)
         self.angle_brainstormer = AngleBrainstormerAgent(model_name=REASONING_MODEL)
+        self.angle_evaluator = AngleEvaluatorAgent(model_name=REASONING_MODEL)
         self.article_writer = ArticleWriterAgent(model_name=REASONING_MODEL)
         self.humor_critic = HumorCriticAgent(model_name=REASONING_MODEL)
         self.style_critic = StyleCriticAgent(model_name=REASONING_MODEL)
@@ -418,10 +468,17 @@ class Coordinator:
 
         # Step 4: Brainstorm Angles
         angles_text = self.angle_brainstormer.run(clean_summary)
-        if not angles_text: return None, None, None
+        # ... (error handling) ...
         angles = [line.split('.', 1)[-1].strip() for line in angles_text.split('\n') if '.' in line]
         if not angles: return None, None, None
-        angle = random.choice(angles)
+        time.sleep(2)
+
+        # ⭐️ NEW Step 4.5: Intelligently Evaluate and Select the Best Angle
+        # angle = random.choice(angles) # <-- This is what we are replacing
+        angle = self.angle_evaluator.run(summary=clean_summary, angles=angles)
+        if not angle: 
+            print("--- 🛑 Coordinator: Angle Evaluator failed. Aborting. ---")
+            return None, None, None
         print(f'Coordinator: Chosen angle -> "{angle}"\n')
         time.sleep(2)
 
